@@ -8,8 +8,8 @@ from sqlalchemy.sql import func
 import uuid
 
 CANDIDATE_SET_SIZE = 3200
-MIN_GAMES_FOR_LEADERBOARD = 1
-LATEST_GAMES_EVALUATED = 2
+MIN_GAMES_FOR_LEADERBOARD = 128
+LATEST_GAMES_EVALUATED = 128
 
 SALT = '3o0dkxm23ikd20dk203kdk02,xqmxqkoxWM'
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -54,7 +54,6 @@ def choose_random_subset(list, size, seed):
 def prepare_task(wordlen, solution_count, seed):
     return choose_random_subset(load_words(wordlen), CANDIDATE_SET_SIZE, seed)
 
-
 @app.route('/')
 def results():
     out = "<h1> Rules </h1>"
@@ -82,7 +81,7 @@ def register(uname):
     if exists:
         return {'error':'User already registered!'}, 400
 
-    user_obj = User(username=uname)
+    user_obj = User(username=uname,games_played=0)
     db.session.add(user_obj)
     db.session.commit()
     return {'token': user_obj.id}, 200
