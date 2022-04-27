@@ -6,12 +6,9 @@ from flask_sqlalchemy import SQLAlchemy
 import hashlib
 from sqlalchemy.sql import func
 import uuid
+import re
+from wordle_config import *
 
-CANDIDATE_SET_SIZE = 3200
-MIN_GAMES_FOR_LEADERBOARD = 128
-LATEST_GAMES_EVALUATED = 128
-
-SALT = '3o0dkxm23ikd20dk203kdk02,xqmxqkoxWM'
 basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = \
@@ -21,6 +18,16 @@ db = SQLAlchemy(app)
 
 def generate_uuid():
     return str(uuid.uuid4())
+
+def validate_string_inputs(strings):
+    for string in strings:
+        if not validate_token_format(string):
+            return False
+    return True
+
+def validate_token_format(token):
+    pat = re.compile(r"[A-Za-z0-9\-]+")
+    return re.fullmatch(pat, token)
 
 class User(db.Model):
     id = db.Column(db.String(64), primary_key=True, default=generate_uuid)
@@ -64,19 +71,22 @@ def results():
         was_empty = True
         out += "<h2>" + wlen + " letter words</h2>"
         with db.engine.connect() as con:
-            rs = con.execute("SELECT U1.username as user, AVG(IIF(G1.solved,G1.guesses,10)) AS avg_score FROM Game G1 join User U1 on U1.id = G1.user WHERE G1.id in (SELECT G.id FROM Game G WHERE G.wordlen = "+str(wlen)+"  and G.user = G1.user ORDER BY G.created_at DESC LIMIT "+ str(LATEST_GAMES_EVALUATED) + ")  GROUP BY G1.user HAVING U1.games_played >= " + str(MIN_GAMES_FOR_LEADERBOARD) + " ORDER BY avg_score ASC")
+            rs = con.execute("SELECT U1.username as user, AVG(IIF(G1.solved,G1.guesses,"+ str(PENALTY_UNSOLVED) + ")) AS avg_score FROM Game G1 join User U1 on U1.id = G1.user WHERE G1.id in (SELECT G.id FROM Game G WHERE G.wordlen = "+str(wlen)+"  and G.user = G1.user ORDER BY G.created_at DESC LIMIT "+ str(LATEST_GAMES_EVALUATED) + ")  GROUP BY G1.user HAVING U1.games_played >= " + str(MIN_GAMES_FOR_LEADERBOARD) + " ORDER BY avg_score ASC")
             for row in rs:
                 was_empty = False
                 out += str(round(row.avg_score,3)) + " | " + row.user + "<br />"
         if was_empty:
             out += "No results yet."
-    out += "<p><em>(Play at least " + str(
-        MIN_GAMES_FOR_LEADERBOARD) + " games under a username to enter the leaderboards)</em></p>"
+    out += "<hr/><ul><li>Play at least " + str(
+        MIN_GAMES_FOR_LEADERBOARD) + " games under a username to enter the leaderboards.</li><li> Your " + str(LATEST_GAMES_EVALUATED) + \
+    " latest games will count toward your score.</li><li>Unfinished round = " + str(PENALTY_UNSOLVED) + " guesses.</li></ul>"
     out += "<hr/> <em> (c) Panaxeo 2022</em>"
     return out
 
 @app.route('/register/<string:uname>')
 def register(uname):
+    if not validate_string_inputs([uname]):
+        return {'error':'Wrong input string format'}, 400
     exists = db.session.query(User.username).filter_by(username=uname).first() is not None
     if exists:
         return {'error':'User already registered!'}, 400
@@ -89,8 +99,11 @@ def register(uname):
 
 @app.route('/start/<string:token>/<int:wordsize>')
 def start_game(token, wordsize):
+    if not validate_string_inputs([token]):
+        return {'error':'Wrong input string format'}, 400
+
     user = token
-    size = wordsize
+    size = int(wordsize)
 
     # validate input
     if size < 4 or size > 6:
@@ -122,6 +135,7 @@ def start_game(token, wordsize):
 
 
 def evaluate_guess(solution, guess):
+
     assert len(solution) == len(guess)
     out_str = list(guess)
     for i in range(0, len(guess)):
@@ -140,6 +154,10 @@ def is_solved(solution_string):
 
 @app.route('/guess/<string:game_id>/<string:guess>/')
 def guess(game_id, guess):
+
+    if not validate_string_inputs([game_id,guess]):
+        return {'error':'Wrong input string format'}, 400
+
     game_obj = Game.query.get(game_id)
     if game_obj is None:
         return {'error:':'Incorrect game id.'}, 400
@@ -157,7 +175,6 @@ def guess(game_id, guess):
 
     db.session.commit()
     return {'result':guess_eval}, 200
-
 
 if __name__ == '__main__':
     app.run()
