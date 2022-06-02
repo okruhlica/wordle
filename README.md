@@ -1,2 +1,2 @@
 # wordle
-Wordle guesser server by Panaxeo
+Entropy based wordle guesser by Adam Okruhlica
